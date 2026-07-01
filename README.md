@@ -154,3 +154,12 @@ If the warehouse is stopped, Databricks starts it on connect (may take a few sec
 ## Running more queries
 
 If you want to run more queries to your data, please check the local const variable `sql` inside the [Program.cs](Program.cs) file, inside you can modify it and execute your own logic to test the behavior.
+
+---
+
+## Entity Framework?
+
+Wondering whether to use Entity Framework instead of ODBC? See the feasibility analysis
+in [docs/entity-framework-analysis.md](docs/entity-framework-analysis.md). Short version:
+EF Core has no free/official Databricks provider (only the commercial CData one), and
+there is no generic ODBC provider for EF Core.
