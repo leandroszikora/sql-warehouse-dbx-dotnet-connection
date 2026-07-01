@@ -5,17 +5,17 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>DatabricksSqlDemo</RootNamespace>
+    <RootNamespace>DatabricksSqlDapperDemo</RootNamespace>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Data.Odbc" Version="8.0.1" />
+    <PackageReference Include="Dapper" Version="2.1.66" />
   </ItemGroup>
 
-  <!-- The Dapper feasibility demo is a separate project; don't compile it here. -->
+  <!-- Reuse the connection helper from the root project without duplicating it. -->
   <ItemGroup>
-    <Compile Remove="dapper-demo/**/*.cs" />
-    <Content Remove="dapper-demo/**" />
+    <Compile Include="..\DatabricksConnection.cs" Link="DatabricksConnection.cs" />
   </ItemGroup>
 
 </Project>

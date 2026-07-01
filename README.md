@@ -169,3 +169,32 @@ Weighing how to consume Delta from .NET (direct SQL Warehouse vs. **Lakebase** v
 [docs/lakebase-vs-sql-warehouse.md](docs/lakebase-vs-sql-warehouse.md). Short version:
 only the direct SQL Warehouse reads Delta without copying; the other two give you free
 native EF but require materializing the data into an OLTP database first.
+
+---
+
+## Dapper feasibility test
+
+Since EF Core has no free Databricks provider, [**Dapper**](https://github.com/DapperLib/Dapper)
+is the closest free ORM-like option: it runs over the **same** ODBC connection this repo
+already uses and maps result rows to plain C# classes (POCOs). A working proof of concept
+lives in [dapper-demo/](dapper-demo/):
+
+- Reuses the shared connection helper [DatabricksConnection.cs](DatabricksConnection.cs).
+- Queries the sample table `samples.bakehouse.sales_customers` (available in every
+  Databricks workspace) and maps rows to a `SalesCustomer` POCO with `Query<SalesCustomer>()`.
+- Demonstrates two feasibility details:
+  - `Dapper.DefaultTypeMap.MatchNamesWithUnderscores = true` so snake_case columns
+    (`first_name`) map to PascalCase properties (`FirstName`).
+  - A parameterized query using ODBC's positional `?` placeholder.
+
+Run it with the **same environment variables** as the main app:
+
+```bash
+export DATABRICKS_HOST="adb-xxxx.azuredatabricks.net"
+export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/abc123def456"
+export DATABRICKS_TOKEN="dapiXXXXXXXX"
+cd dapper-demo
+dotnet run
+```
+
+Point it at another table by setting `DAPPER_TEST_QUERY` to your own SELECT.

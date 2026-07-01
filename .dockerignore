@@ -3,3 +3,5 @@ obj/
 .git/
 .gitignore
 *.md
+dapper-demo/
+docs/
