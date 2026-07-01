@@ -148,3 +148,9 @@ Done: the connection works end to end.
 ```
 
 If the warehouse is stopped, Databricks starts it on connect (may take a few seconds).
+
+---
+
+## Running more queries
+
+If you want to run more queries to your data, please check the local const variable `sql` inside the [Program.cs](Program.cs) file, inside you can modify it and execute your own logic to test the behavior.
