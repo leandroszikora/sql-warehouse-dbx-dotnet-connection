@@ -198,3 +198,6 @@ dotnet run
 ```
 
 Point it at another table by setting `DAPPER_TEST_QUERY` to your own SELECT.
+
+Wondering whether Dapper has the same features as Entity Framework as an ORM? See the
+feature comparison in [docs/dapper-vs-ef-features.md](docs/dapper-vs-ef-features.md).
