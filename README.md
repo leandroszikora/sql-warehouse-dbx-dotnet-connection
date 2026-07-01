@@ -164,7 +164,8 @@ in [docs/entity-framework-analysis.md](docs/entity-framework-analysis.md). Short
 EF Core has no free/official Databricks provider (only the commercial CData one), and
 there is no generic ODBC provider for EF Core.
 
-Considering **Lakebase** (Databricks' managed Postgres) to get native EF? See
-[docs/lakebase-vs-sql-warehouse.md](docs/lakebase-vs-sql-warehouse.md) — it gives you
-free EF, but only by copying Delta into Postgres (synced tables), which is the opposite of
-reading Delta in place.
+Weighing how to consume Delta from .NET (direct SQL Warehouse vs. **Lakebase** vs. a
+**separate transactional DB + custom ETL**)? See
+[docs/lakebase-vs-sql-warehouse.md](docs/lakebase-vs-sql-warehouse.md). Short version:
+only the direct SQL Warehouse reads Delta without copying; the other two give you free
+native EF but require materializing the data into an OLTP database first.
