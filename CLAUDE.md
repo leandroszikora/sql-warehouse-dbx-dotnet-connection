@@ -22,6 +22,11 @@ DatabricksConnection.cs       # SHARED connection helper (used by both projects)
 dapper-demo/                  # separate console POC using Dapper over the same connection
   DatabricksSqlDapperDemo.csproj  # links ../DatabricksConnection.cs; Dapper 2.1.66
   Program.cs                  # Query<SalesCustomer> against samples.bakehouse.sales_customers
+customers-api/                # ASP.NET Core MVC Web API (classic controllers) over Dapper+ODBC
+  DatabricksCustomersApi.csproj   # Sdk=Microsoft.NET.Sdk.Web; links ../DatabricksConnection.cs
+  Program.cs                  # AddControllers + Swagger; sets MatchNamesWithUnderscores
+  Models/SalesCustomer.cs     # POCO (duplicated from dapper-demo on purpose — demos are standalone)
+  Controllers/CustomersController.cs  # GET /customers (whitelisted query-param filters), GET /customers/{id}
 docs/
   entity-framework-analysis.md    # why EF Core can't run free on Databricks
   lakebase-vs-sql-warehouse.md    # 3 options to consume Delta from .NET
@@ -30,8 +35,9 @@ Dockerfile                    # .NET SDK 8 image + unixODBC + Simba driver (linu
 ```
 
 Key wiring details:
-- The root `.csproj` has `<Compile Remove="dapper-demo/**/*.cs" />` so the default glob
-  doesn't pick up the sub-project. Keep that if adding more sub-demos.
+- The root `.csproj` has `<Compile Remove>`/`<Content Remove>` for `dapper-demo/**` and
+  `customers-api/**` so the default glob doesn't pick up the sub-projects. Keep that if
+  adding more sub-demos.
 - `dapper-demo` reuses the helper via a **linked file**
   (`<Compile Include="..\DatabricksConnection.cs" Link=... />`) — no class library, on purpose
   (keeps each demo runnable standalone with `dotnet run`).
@@ -108,6 +114,7 @@ export DATABRICKS_HOST="dbc-xxxx.cloud.databricks.com"   # scheme/slash tolerate
 export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/<id>"
 export DATABRICKS_TOKEN="dapi..."
 dotnet run                                   # or: cd dapper-demo && dotnet run
+# REST API: cd customers-api && dotnet run   # then GET /customers?gender=female, /customers/{id}, /swagger
 ```
 
 **Smoke test without credentials** (validates the whole native stack): run with
@@ -124,9 +131,24 @@ platform gotchas above regressed.
   New analysis docs go in `docs/` and get linked from README.
 - Push over **SSH**
 
+### customers-api specifics
+- Query-param filtering is a **fixed whitelist** (param → column) in
+  `CustomersController`; user input only ever travels as positional `?` values.
+  `limit` is a range-checked int inlined into the SQL (parameterized LIMIT is
+  unreliable on the Simba/Spark driver).
+- Target table overridable via `CUSTOMERS_TABLE` (default
+  `samples.bakehouse.sales_customers`).
+- One ODBC connection per request, on purpose (POC simplicity); documented in README.
+- Smoke test: run with the fake-host pattern below, then
+  `curl localhost:<port>/customers` must return HTTP 500 whose detail contains
+  `Could not resolve host` (proves controller → Dapper → driver wiring), and
+  `?limit=0` must return 400.
+
 ## Current status / possible next steps
 
 - Dapper POC: builds + smoke-tested; real-data mapping run pending on the owner
   (positional-parameter binding is the one point to confirm).
+- customers-api: builds + smoke-tested without credentials (routing, validation and
+  native stack verified); real-data run against a live warehouse pending on the owner.
 - Pending ideas discussed but not requested yet: one-page executive summary of the
   EF/Lakebase/Dapper analyses; flow diagram; Makefile/scripts; testing the Docker build.

@@ -12,10 +12,12 @@
     <PackageReference Include="System.Data.Odbc" Version="8.0.1" />
   </ItemGroup>
 
-  <!-- The Dapper feasibility demo is a separate project; don't compile it here. -->
+  <!-- The Dapper demo and the customers API are separate projects; don't compile them here. -->
   <ItemGroup>
     <Compile Remove="dapper-demo/**/*.cs" />
     <Content Remove="dapper-demo/**" />
+    <Compile Remove="customers-api/**/*.cs" />
+    <Content Remove="customers-api/**" />
   </ItemGroup>
 
 </Project>

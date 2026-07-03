@@ -201,3 +201,49 @@ Point it at another table by setting `DAPPER_TEST_QUERY` to your own SELECT.
 
 Wondering whether Dapper has the same features as Entity Framework as an ORM? See the
 feature comparison in [docs/dapper-vs-ef-features.md](docs/dapper-vs-ef-features.md).
+
+---
+
+## REST API demo (`GET /customers`)
+
+[customers-api/](customers-api/) takes the Dapper POC one step further: a classic
+ASP.NET Core MVC Web API (`[ApiController]` + attribute routing) that serves Delta
+rows live from the SQL Warehouse — HTTP → Controller → Dapper → ODBC, no data copy.
+
+### Endpoints
+
+| Endpoint | Description |
+| --- | --- |
+| `GET /customers` | Lists customers; every supplied query parameter becomes a `WHERE col = ?` filter |
+| `GET /customers/{id}` | Fetches one customer by `customerID` (404 if not found) |
+| `GET /swagger` | Interactive Swagger UI |
+
+Supported filters: `gender`, `country`, `city`, `state`, `continent`, `firstName`,
+`lastName`, plus `limit` (default 100, max 1000). Filter names map to a **fixed
+whitelist of columns** in the controller — request text never reaches the SQL as
+identifiers, only as parameter values (positional `?` binding).
+
+### Run
+
+Same environment variables as the other demos; optionally set `CUSTOMERS_TABLE`
+to point at a table other than `samples.bakehouse.sales_customers`:
+
+```bash
+export DATABRICKS_HOST="adb-xxxx.azuredatabricks.net"
+export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/abc123def456"
+export DATABRICKS_TOKEN="dapiXXXXXXXX"
+cd customers-api
+dotnet run
+```
+
+Then (adjust the port to what `dotnet run` prints):
+
+```bash
+curl "http://localhost:5000/customers?gender=female&limit=5"
+curl "http://localhost:5000/customers?country=USA&city=Seattle"
+curl "http://localhost:5000/customers/1234567"
+```
+
+> Note: the API opens one ODBC connection per request — fine for a POC, but each
+> request pays the connection handshake (a few seconds if the warehouse is cold).
+> A production version would keep/pool connections.
