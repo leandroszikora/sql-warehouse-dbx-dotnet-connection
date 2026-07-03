@@ -12,7 +12,6 @@ repo also contains feasibility analyses of EF/Lakebase/ETL alternatives and a wo
 **Dapper** POC.
 
 - Repo: `git@github.com:leandroszikora/sql-warehouse-dbx-dotnet-connection.git` (branch `main`)
-- Local path: `/Users/leandroszikora/Documents/DBlandIT/DatabricksSqlDemo`
 
 ## Layout
 
@@ -123,12 +122,10 @@ platform gotchas above regressed.
   conversation with the repo owner is Spanish.
 - Docs style: TL;DR first, comparison table, recommendation, sources with links.
   New analysis docs go in `docs/` and get linked from README.
-- Push over **SSH** (the SSH key authenticates as `leandroszikora`, the repo owner);
-  `gh` CLI is logged in as a different account (`lszikoradblandit`) — don't push via gh/HTTPS.
+- Push over **SSH**
 
 ## Current status / possible next steps
 
-- Root ODBC demo: **verified end-to-end** against the client's real warehouse.
 - Dapper POC: builds + smoke-tested; real-data mapping run pending on the owner
   (positional-parameter binding is the one point to confirm).
 - Pending ideas discussed but not requested yet: one-page executive summary of the
