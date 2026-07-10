@@ -27,6 +27,13 @@ customers-api/                # ASP.NET Core MVC Web API (classic controllers) o
   Program.cs                  # AddControllers + Swagger; sets MatchNamesWithUnderscores
   Models/SalesCustomer.cs     # POCO (duplicated from dapper-demo on purpose — demos are standalone)
   Controllers/CustomersController.cs  # GET /customers (whitelisted query-param filters), GET /customers/{id}
+customers-api-lakebase/       # same API over Lakebase Postgres via EF Core + Npgsql (port 5210)
+  DatabricksCustomersLakebaseApi.csproj  # Npgsql.EntityFrameworkCore.PostgreSQL 8.x; standalone (no linked files)
+  Program.cs                  # NpgsqlDataSource + UsePasswordProvider + AddDbContext; fails fast on missing env vars
+  LakebaseCredentialProvider.cs   # mints/caches the OAuth Postgres credential via /api/2.0/database/credentials
+  Data/CustomersDbContext.cs  # fluent mapping to the synced table (schema.table from LAKEBASE_TABLE)
+  Models/SalesCustomer.cs     # POCO duplicated on purpose — demos are standalone
+  Controllers/CustomersController.cs  # same endpoints/filters, LINQ instead of SQL
 docs/
   entity-framework-analysis.md    # why EF Core can't run free on Databricks
   lakebase-vs-sql-warehouse.md    # 3 options to consume Delta from .NET
@@ -93,6 +100,53 @@ Key wiring details:
   Apple Silicon). Docker is NOT installed on the dev Mac; the Dockerfile is untested
   end-to-end.
 
+### Lakebase (customers-api-lakebase)
+- **The workspace PAT is NOT a valid Postgres password.** Lakebase requires an OAuth
+  database credential (expires ~1 h, enforced at login only). The PAT is only valid to
+  MINT that credential, and **Lakebase has two flavors with different credential APIs**:
+  - *Projects* (Neon-based — the ONLY flavor on Free Edition; hosts look like
+    `ep-xxxx.database...`): `POST /api/2.0/postgres/credentials`, body
+    `{"endpoint": "projects/{p}/branches/{b}/endpoints/{e}"}` → `{"token", "expire_time"}`.
+    Env var: `LAKEBASE_ENDPOINT`. IDs discoverable via `databricks postgres list-projects`
+    / `list-branches` / `list-endpoints`. (REST path confirmed from databricks-sdk-go
+    `service/postgres/impl.go` — the API reference SPA is unreadable by fetch tools.)
+  - *Provisioned database instances*: `POST /api/2.0/database/credentials`, body
+    `{"request_id": "<uuid>", "instance_names": ["<name>"]}` → `{"token",
+    "expiration_time"}` (note the different field name). Env var: `LAKEBASE_INSTANCE`.
+  `LakebaseCredentialProvider` picks the API from whichever env var is set (endpoint
+  wins), caches the token and refreshes 5 min before expiry.
+- **Endpoint ID ≠ the `ep-xxxx` string in the hostname.** In the resource name the last
+  segment is the endpoint's `endpoint_id` (often literally `primary`); the `ep-xxxx`
+  value is the endpoint's `uid`, which only appears in the Postgres hostname. Using the
+  uid in `LAKEBASE_ENDPOINT` returns 404 NOT_FOUND. Verified working format:
+  `projects/<project>/branches/<branch>/endpoints/primary` (project/branch here are the
+  user-chosen IDs, e.g. `test`/`production`).
+- Discovery without the CLI (paths confirmed from databricks-sdk-go): GET
+  `/api/2.0/postgres/projects`, then `/api/2.0/postgres/{project_name}/branches`, then
+  `/api/2.0/postgres/{branch_name}/endpoints` — each response's `name` field is the full
+  resource name to feed to the next call / to `LAKEBASE_ENDPOINT`.
+- The workspace PAT works as Bearer auth for `/api/2.0/postgres/*` on **Free Edition**
+  (verified live) — a 404 from the credentials API means a wrong resource name, not an
+  auth problem (bad auth would be 401/403).
+- Endpoints also expose a **pooled host** (`ep-xxxx-pooler.database...`, server-side
+  PgBouncer-style). Untested here; candidate for comparing under many short-lived
+  connections.
+- Npgsql `UsePasswordProvider` requires BOTH sync and async callbacks (throws
+  `ArgumentException` if either is null) — the sync one is a blocking wrapper.
+- Npgsql surfaces DNS/socket failures as a raw `SocketException` (not wrapped in
+  `NpgsqlException`) — the controller catches it explicitly.
+- Env vars: reuses `DATABRICKS_HOST`/`DATABRICKS_TOKEN` (credentials API) + new
+  `LAKEBASE_ENDPOINT` or `LAKEBASE_INSTANCE`, `LAKEBASE_HOST`, `LAKEBASE_USER` (plain
+  email, not URL-encoded), optional `LAKEBASE_DATABASE`
+  (default `databricks_postgres`) and `LAKEBASE_TABLE` (default `public.sales_customers`).
+  Missing vars fail fast at startup (unlike customers-api, which 500s per request).
+- Fixed port 5210 via `Properties/launchSettings.json` so it can run alongside
+  customers-api. Timing headers: only `X-Query-Ms`/`X-Total-Ms` (Npgsql pools, so there
+  is no per-request handshake to report).
+- Smoke test without credentials: set all five vars to fake values (`*.invalid` hosts);
+  `GET /customers` must return a 500 problem+json whose detail says
+  `Could not reach the Lakebase Postgres host`, and `?limit=0` must return 400.
+
 ### Dapper specifics
 - Databricks columns are snake_case; POCOs are PascalCase → must set
   `DefaultTypeMap.MatchNamesWithUnderscores = true;` before querying.
@@ -153,5 +207,8 @@ platform gotchas above regressed.
   (positional-parameter binding is the one point to confirm).
 - customers-api: builds + smoke-tested without credentials (routing, validation and
   native stack verified); real-data run against a live warehouse pending on the owner.
+- customers-api-lakebase: **verified end-to-end against a live Lakebase project (Free
+  Edition)** — PAT → credentials API → EF Core query returning real rows. Both APIs also
+  verified running simultaneously (5199/5210).
 - Pending ideas discussed but not requested yet: one-page executive summary of the
   EF/Lakebase/Dapper analyses; flow diagram; Makefile/scripts; testing the Docker build.

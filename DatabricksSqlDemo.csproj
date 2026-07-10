@@ -18,6 +18,8 @@
     <Content Remove="dapper-demo/**" />
     <Compile Remove="customers-api/**/*.cs" />
     <Content Remove="customers-api/**" />
+    <Compile Remove="customers-api-lakebase/**/*.cs" />
+    <Content Remove="customers-api-lakebase/**" />
   </ItemGroup>
 
 </Project>

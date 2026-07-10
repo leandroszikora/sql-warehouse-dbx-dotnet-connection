@@ -258,3 +258,77 @@ so you can measure how long the SQL Warehouse takes to answer:
 > Note: the API opens one ODBC connection per request — fine for a POC, but each
 > request pays the connection handshake (a few seconds if the warehouse is cold).
 > A production version would keep/pool connections.
+
+---
+
+## REST API demo #2: Lakebase + EF Core (`customers-api-lakebase/`)
+
+[customers-api-lakebase/](customers-api-lakebase/) is the other half of the serving
+comparison: the **same `GET /customers` API**, but reading from a **Lakebase Postgres
+instance** (a synced table of `sales_customers`) through **Entity Framework Core +
+Npgsql** — the free, official ORM path that Databricks itself lacks. It listens on a
+fixed port (**5210**, see `Properties/launchSettings.json`) so it can run side by side
+with the SQL Warehouse API and compare response times.
+
+### Authentication: PAT ≠ Postgres password
+
+Lakebase does **not** accept the workspace PAT as the Postgres password. It requires a
+short-lived OAuth database credential (~1 h). The PAT *is* valid to mint one via the
+REST API, so the app does exactly that: `LakebaseCredentialProvider` calls the API with
+your PAT, caches the credential, and refreshes it a few minutes before expiry — Npgsql
+asks for it whenever it opens a physical connection (pooled connections re-use it).
+
+Lakebase comes in **two flavors**, with different credential APIs — set the matching
+env var and the provider picks the right one:
+
+| Flavor | How to spot it | Env var | Credentials API |
+| --- | --- | --- | --- |
+| **Project** (Neon-based; the only flavor on Free Edition) | Postgres host looks like `ep-xxxx...database...` | `LAKEBASE_ENDPOINT=projects/{p}/branches/{b}/endpoints/{e}` | `POST /api/2.0/postgres/credentials` |
+| **Provisioned database instance** | Listed under Compute → Database instances | `LAKEBASE_INSTANCE=<instance name>` | `POST /api/2.0/database/credentials` |
+
+Find the project/branch/endpoint IDs in the Lakebase project UI, via CLI
+(`databricks postgres list-projects`, then `list-branches projects/<id>`, then
+`list-endpoints projects/<id>/branches/<id>`), or with plain curl against
+`GET /api/2.0/postgres/projects` (then `.../{project}/branches`,
+`.../{branch}/endpoints`) — each response's `name` field is the full resource name.
+
+> **Gotcha:** the last segment of the endpoint resource name is the `endpoint_id`
+> (often literally `primary`), **not** the `ep-xxxx` string from the Postgres hostname —
+> that one is the endpoint's `uid`, and using it in `LAKEBASE_ENDPOINT` gets a 404.
+
+### Run
+
+```bash
+export DATABRICKS_HOST="adb-xxxx.azuredatabricks.net"     # workspace (for the credentials API)
+export DATABRICKS_TOKEN="dapiXXXXXXXX"                    # PAT (for the credentials API)
+export LAKEBASE_ENDPOINT="projects/my-project/branches/production/endpoints/primary"  # project flavor…
+# …or, for a provisioned instance: export LAKEBASE_INSTANCE="my-lakebase-instance"
+export LAKEBASE_HOST="ep-xxxx.database.us-east-2.cloud.databricks.com"  # Postgres hostname
+export LAKEBASE_USER="you@example.com"                    # your Databricks identity (plain, not URL-encoded)
+# optional: LAKEBASE_DATABASE (default databricks_postgres)
+# optional: LAKEBASE_TABLE   (default public.sales_customers, format schema.table)
+cd customers-api-lakebase
+dotnet run
+```
+
+Endpoints, filters and validation are identical to `customers-api`. Timing headers on
+success: `X-Query-Ms` and `X-Total-Ms`. There is no `X-Connection-Open-Ms` here —
+Npgsql **pools** connections, so unlike the ODBC demo there is no per-request
+handshake; that difference is itself part of the comparison.
+
+### Side-by-side comparison
+
+```bash
+# terminal 1 — SQL Warehouse API on port 5000 (or ASPNETCORE_URLS of your choice)
+cd customers-api && dotnet run
+# terminal 2 — Lakebase API on port 5210
+cd customers-api-lakebase && dotnet run
+# compare:
+curl -si "http://localhost:5000/customers?limit=10" | grep -i x-.*-ms
+curl -si "http://localhost:5210/customers?limit=10" | grep -i x-.*-ms
+```
+
+> Note: [docs/lakebase-vs-sql-warehouse.md](docs/lakebase-vs-sql-warehouse.md) rejected
+> Lakebase under the strict "no data copy" requirement (synced tables ARE a copy).
+> This demo exists to *measure* that alternative anyway, so the latency/architecture
+> trade-off is decided with numbers instead of assumptions.
