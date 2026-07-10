@@ -38,6 +38,8 @@ docs/
   entity-framework-analysis.md    # why EF Core can't run free on Databricks
   lakebase-vs-sql-warehouse.md    # 3 options to consume Delta from .NET
   dapper-vs-ef-features.md        # Dapper (micro-ORM) vs EF Core (full ORM)
+  benchmark-sql-warehouse-vs-lakebase.md  # measured latency comparison of both APIs + conclusions
+  benchmark-data/results.csv      # raw per-request data of the 2026-07-10 benchmark run
 Dockerfile                    # .NET SDK 8 image + unixODBC + Simba driver (linux/amd64 only)
 ```
 
@@ -210,5 +212,10 @@ platform gotchas above regressed.
 - customers-api-lakebase: **verified end-to-end against a live Lakebase project (Free
   Edition)** — PAT → credentials API → EF Core query returning real rows. Both APIs also
   verified running simultaneously (5199/5210).
+- Benchmark run 2026-07-10 (see `docs/benchmark-sql-warehouse-vs-lakebase.md`): Lakebase
+  ~140 ms median vs warehouse ~1.7 s end-to-end (~750 ms engine-only once the ODBC
+  handshake is excluded). Free-tier sizes, 300-row table, warm, sequential — floor
+  measurement only. Obvious follow-ups: ODBC connection pooling, `-pooler` Lakebase
+  host, cold-start measurement, real-sized data under load.
 - Pending ideas discussed but not requested yet: one-page executive summary of the
   EF/Lakebase/Dapper analyses; flow diagram; Makefile/scripts; testing the Docker build.

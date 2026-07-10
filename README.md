@@ -332,3 +332,9 @@ curl -si "http://localhost:5210/customers?limit=10" | grep -i x-.*-ms
 > Lakebase under the strict "no data copy" requirement (synced tables ARE a copy).
 > This demo exists to *measure* that alternative anyway, so the latency/architecture
 > trade-off is decided with numbers instead of assumptions.
+
+**The measured comparison now exists:**
+[docs/benchmark-sql-warehouse-vs-lakebase.md](docs/benchmark-sql-warehouse-vs-lakebase.md)
+— latency benchmark of both APIs (median/p95 per scenario), architecture and
+development-complexity comparison, and conclusions. Spoiler: ~140 ms vs ~1.7 s medians
+on the free-tier, unoptimized setup, with the trade-off being the synced-table copy.
