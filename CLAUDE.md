@@ -139,6 +139,9 @@ platform gotchas above regressed.
 - Target table overridable via `CUSTOMERS_TABLE` (default
   `samples.bakehouse.sales_customers`).
 - One ODBC connection per request, on purpose (POC simplicity); documented in README.
+- Successful responses carry timing headers set in `Execute`: `X-Connection-Open-Ms`
+  (ODBC handshake), `X-Query-Ms` (query + materialization), `X-Total-Ms` (sum).
+  Error responses have no timing headers.
 - Smoke test: run with the fake-host pattern below, then
   `curl localhost:<port>/customers` must return HTTP 500 whose detail contains
   `Could not resolve host` (proves controller → Dapper → driver wiring), and

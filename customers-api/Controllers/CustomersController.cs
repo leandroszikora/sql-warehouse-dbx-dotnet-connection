@@ -1,4 +1,5 @@
 using System.Data.Odbc;
+using System.Diagnostics;
 using Dapper;
 using DatabricksCustomersApi.Models;
 using DatabricksSqlDemo; // DatabricksConnection (linked from the root project)
@@ -84,12 +85,24 @@ public sealed class CustomersController : ControllerBase
 
     // Opens a connection per request (fine for a POC; each request pays the ODBC
     // handshake) and translates the demo's known failure modes into HTTP 500s.
+    // Timing is reported via response headers so the JSON body stays untouched:
+    //   X-Connection-Open-Ms  ODBC handshake against the warehouse
+    //   X-Query-Ms            query execution + result materialization
+    //   X-Total-Ms            sum of both (whole warehouse round trip)
     private IActionResult Execute(Func<OdbcConnection, IActionResult> action)
     {
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             using OdbcConnection connection = DatabricksConnection.OpenConnection();
-            return action(connection);
+            long connectionOpenMs = stopwatch.ElapsedMilliseconds;
+            IActionResult result = action(connection);
+            stopwatch.Stop();
+
+            Response.Headers["X-Connection-Open-Ms"] = connectionOpenMs.ToString();
+            Response.Headers["X-Query-Ms"] = (stopwatch.ElapsedMilliseconds - connectionOpenMs).ToString();
+            Response.Headers["X-Total-Ms"] = stopwatch.ElapsedMilliseconds.ToString();
+            return result;
         }
         catch (InvalidOperationException ex) // missing env vars or ODBC driver
         {

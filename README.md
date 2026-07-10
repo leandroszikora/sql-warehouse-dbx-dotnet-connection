@@ -244,6 +244,17 @@ curl "http://localhost:5000/customers?country=USA&city=Seattle"
 curl "http://localhost:5000/customers/1234567"
 ```
 
+### Response-time measurement
+
+Every successful response carries timing headers (use `curl -i` to see them),
+so you can measure how long the SQL Warehouse takes to answer:
+
+| Header | Meaning |
+|---|---|
+| `X-Connection-Open-Ms` | ODBC handshake against the warehouse (paid on every request in this POC) |
+| `X-Query-Ms` | Query execution + result materialization |
+| `X-Total-Ms` | Sum of both — the whole warehouse round trip |
+
 > Note: the API opens one ODBC connection per request — fine for a POC, but each
 > request pays the connection handshake (a few seconds if the warehouse is cold).
 > A production version would keep/pool connections.
