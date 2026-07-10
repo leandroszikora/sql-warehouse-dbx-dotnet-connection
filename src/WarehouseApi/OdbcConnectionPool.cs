@@ -1,9 +1,8 @@
 using System.Collections.Concurrent;
 using System.Data;
 using System.Data.Odbc;
-using DatabricksSqlDemo;
 
-namespace DatabricksCustomersApi;
+namespace DatabricksServing.WarehouseApi;
 
 /// <summary>
 /// Minimal app-level pool of open ODBC connections to the SQL Warehouse.

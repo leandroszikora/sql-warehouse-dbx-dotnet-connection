@@ -1,11 +1,11 @@
 using System.Data.Odbc;
 using System.Diagnostics;
 using Dapper;
-using DatabricksCustomersApi.Models;
-using DatabricksSqlDemo; // DatabricksConnection (linked from the root project)
+using DatabricksServing.Shared;
+using DatabricksServing.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace DatabricksCustomersApi.Controllers;
+namespace DatabricksServing.WarehouseApi.Controllers;
 
 [ApiController]
 [Route("customers")]
@@ -141,17 +141,4 @@ public sealed class CustomersController(OdbcConnectionPool pool) : ControllerBas
             connection?.Dispose(); // only non-null when an exception skipped Return
         }
     }
-}
-
-/// <summary>Optional equality filters for GET /customers, bound from the query string.</summary>
-public sealed class CustomerFilters
-{
-    public string? Gender { get; init; }
-    public string? Country { get; init; }
-    public string? City { get; init; }
-    public string? State { get; init; }
-    public string? Continent { get; init; }
-    public string? FirstName { get; init; }
-    public string? LastName { get; init; }
-    public int Limit { get; init; } = 100;
 }

@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.Json;
 
-namespace DatabricksCustomersLakebaseApi;
+namespace DatabricksServing.LakebaseApi;
 
 /// <summary>
 /// Generates the short-lived OAuth credential that Lakebase Postgres requires as the

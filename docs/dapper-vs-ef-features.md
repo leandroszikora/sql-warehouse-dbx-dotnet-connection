@@ -56,7 +56,7 @@ tokens. A Databricks **SQL Warehouse is analytical (OLAP)**:
 - **The decisive point:** EF Core **needs a database-specific provider**, and there is
   **no free/official Databricks provider** (only the commercial CData one). Dapper needs
   **only an ADO.NET connection**, so it works today over the ODBC driver this repo already
-  uses — see [dapper-demo/](../dapper-demo/).
+  uses — see the WarehouseApi backend ([src/WarehouseApi/](../src/WarehouseApi/)).
 
 So for this scenario, most of EF's extra features are things you either **wouldn't use** or
 **can't use** against Databricks anyway. Dapper covers the read/query use case fully, for

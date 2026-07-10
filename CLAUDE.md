@@ -1,57 +1,66 @@
-# CLAUDE.md — DatabricksSqlDemo
+# CLAUDE.md — DatabricksServing
 
 Guidance for Claude Code (and future contributors) working in this repo. It captures
 everything built and learned during the initial development sessions (June–July 2026).
 
 ## What this project is
 
-Proof-of-concept for a client: connect a **.NET 8** app directly to a **Databricks SQL
-Warehouse** using a **personal access token (PAT)**, reading Delta tables **live, with no
-data copy** into a transactional database. The client team uses Entity Framework, so the
-repo also contains feasibility analyses of EF/Lakebase/ETL alternatives and a working
-**Dapper** POC.
+Proof-of-concept for a client: serve Databricks data to **.NET 8** REST backends and
+compare the two serving options. Two ASP.NET Core APIs expose the **same
+`GET /customers` contract** over the same data:
+
+- **WarehouseApi** — SQL Warehouse over ODBC + Dapper (live Delta, no data copy; PAT auth).
+- **LakebaseApi** — Lakebase Postgres over Npgsql + EF Core (synced-table copy; OAuth
+  credential minted from the PAT).
+
+The client team uses Entity Framework — the repo's docs/ analyses explain why EF can't
+run free against the warehouse and price the alternatives; the measured benchmark is in
+`docs/benchmark-sql-warehouse-vs-lakebase.md`.
 
 - Repo: `git@github.com:leandroszikora/sql-warehouse-dbx-dotnet-connection.git` (branch `main`)
+- History note: the repo grew POC-by-POC (root ODBC console demo → dapper-demo console
+  POC → the two APIs). The console demos were removed in the 2026-07-10 restructure;
+  their learnings live on in this file and docs/.
 
 ## Layout
 
 ```
-DatabricksSqlDemo.csproj      # root console demo (raw ODBC), net8.0
-Program.cs                    # opens connection, runs test query via OdbcDataReader
-DatabricksConnection.cs       # SHARED connection helper (used by both projects)
-dapper-demo/                  # separate console POC using Dapper over the same connection
-  DatabricksSqlDapperDemo.csproj  # links ../DatabricksConnection.cs; Dapper 2.1.66
-  Program.cs                  # Query<SalesCustomer> against samples.bakehouse.sales_customers
-customers-api/                # ASP.NET Core MVC Web API (classic controllers) over Dapper+ODBC
-  DatabricksCustomersApi.csproj   # Sdk=Microsoft.NET.Sdk.Web; links ../DatabricksConnection.cs
-  Program.cs                  # AddControllers + Swagger; sets MatchNamesWithUnderscores
-  Models/SalesCustomer.cs     # POCO (duplicated from dapper-demo on purpose — demos are standalone)
-  Controllers/CustomersController.cs  # GET /customers (whitelisted query-param filters), GET /customers/{id}
-  OdbcConnectionPool.cs       # in-process pool of open ODBC connections (no DM pooling in .NET)
-customers-api-lakebase/       # same API over Lakebase Postgres via EF Core + Npgsql (port 5210)
-  DatabricksCustomersLakebaseApi.csproj  # Npgsql.EntityFrameworkCore.PostgreSQL 8.x; standalone (no linked files)
-  Program.cs                  # NpgsqlDataSource + UsePasswordProvider + AddDbContext; fails fast on missing env vars
-  LakebaseCredentialProvider.cs   # mints/caches the OAuth Postgres credential via /api/2.0/database/credentials
-  Data/CustomersDbContext.cs  # fluent mapping to the synced table (schema.table from LAKEBASE_TABLE)
-  Models/SalesCustomer.cs     # POCO duplicated on purpose — demos are standalone
-  Controllers/CustomersController.cs  # same endpoints/filters, LINQ instead of SQL
-  Dockerfile                  # multi-arch (no native deps), aspnet runtime, port 8080
+DatabricksServing.sln         # build everything: dotnet build DatabricksServing.sln
+src/
+  Shared/                     # classlib referenced by both APIs (DatabricksServing.Shared)
+    Models/SalesCustomer.cs   # single POCO for sales_customers (both backends map it)
+    CustomerFilters.cs        # query-string filter DTO — keeps the two API contracts identical
+  WarehouseApi/               # DatabricksServing.WarehouseApi — Dapper + ODBC, dev port 5000
+    Program.cs                # AddControllers + Swagger; MatchNamesWithUnderscores; pool singleton
+    DatabricksConnection.cs   # ODBC connection-string builder + macOS libodbc resolver
+    OdbcConnectionPool.cs     # in-process pool of open ODBC connections (no DM pooling in .NET)
+    Controllers/CustomersController.cs  # whitelisted filters → positional ? SQL; timing headers
+    Properties/launchSettings.json      # fixed port 5000
+    Dockerfile                # linux/amd64 (Simba driver is x86_64-only), aspnet runtime + unixODBC
+  LakebaseApi/                # DatabricksServing.LakebaseApi — EF Core + Npgsql, dev port 5210
+    Program.cs                # NpgsqlDataSource + UsePasswordProvider + AddDbContext; fails fast on missing env vars
+    LakebaseCredentialProvider.cs   # mints/caches the OAuth Postgres credential (both Lakebase flavors)
+    Data/CustomersDbContext.cs # fluent mapping to the synced table (schema.table from LAKEBASE_TABLE)
+    Controllers/CustomersController.cs  # same endpoints/filters, LINQ instead of SQL
+    Properties/launchSettings.json      # fixed port 5210
+    Dockerfile                # multi-arch (no native deps), aspnet runtime
 docs/
   entity-framework-analysis.md    # why EF Core can't run free on Databricks
   lakebase-vs-sql-warehouse.md    # 3 options to consume Delta from .NET
   dapper-vs-ef-features.md        # Dapper (micro-ORM) vs EF Core (full ORM)
-  benchmark-sql-warehouse-vs-lakebase.md  # measured latency comparison of both APIs + conclusions
-  benchmark-data/results.csv      # raw per-request data of the 2026-07-10 benchmark run
-Dockerfile                    # .NET SDK 8 image + unixODBC + Simba driver (linux/amd64 only)
+  benchmark-sql-warehouse-vs-lakebase.md  # measured latency comparison + conclusions
+  benchmark-data/                 # raw per-request CSVs of the benchmark runs
+.dockerignore                 # repo root — both Docker builds use the ROOT as context
 ```
 
 Key wiring details:
-- The root `.csproj` has `<Compile Remove>`/`<Content Remove>` for `dapper-demo/**` and
-  `customers-api/**` so the default glob doesn't pick up the sub-projects. Keep that if
-  adding more sub-demos.
-- `dapper-demo` reuses the helper via a **linked file**
-  (`<Compile Include="..\DatabricksConnection.cs" Link=... />`) — no class library, on purpose
-  (keeps each demo runnable standalone with `dotnet run`).
+- Both APIs reference `src/Shared` via `<ProjectReference>`; shared code is only the
+  model + filters. Connection/pool helpers are warehouse-specific, the credential
+  provider is lakebase-specific — keep them in their API projects.
+- Both Dockerfiles are built from the **repo root** (`docker build -f
+  src/<Api>/Dockerfile .`) because the build needs `src/Shared`.
+- Assembly names = `DatabricksServing.<Project>` — Dockerfile ENTRYPOINTs reference
+  those dll names; keep them in sync if renaming.
 
 ## Architecture decisions (and why)
 
@@ -62,17 +71,17 @@ Key wiring details:
    SSL=1;ThriftTransport=2;AuthMech=3;UID=token;PWD=<PAT>;`. `AuthMech=3` + `UID=token`
    is the standard PAT pattern. `Host` must be a **bare hostname** — the helper strips
    `https://` and trailing `/` because users paste full URLs.
-3. **Config via env vars only**: `DATABRICKS_HOST`, `DATABRICKS_HTTP_PATH`,
-   `DATABRICKS_TOKEN`, optional `DATABRICKS_ODBC_DRIVER`, optional `DAPPER_TEST_QUERY`.
-   The token is never written to files.
+3. **Config via env vars only**: `DATABRICKS_*`, `LAKEBASE_*`, optional
+   `CUSTOMERS_TABLE`/`LAKEBASE_TABLE`. The token is never written to files.
 4. **Entity Framework**: EF Core has **no free/official Databricks provider** and no
    generic ODBC provider. Only path is commercial CData. See
-   `docs/entity-framework-analysis.md`. **Dapper** is the free ORM-like alternative and
-   is proven working in `dapper-demo/`.
-5. **Lakebase rejected** for this use case: it only serves Delta via **synced tables**
-   (a copy into Postgres), violating the client's "no load into a transactional DB"
-   requirement. Same for a self-managed OLTP DB + ETL. See
-   `docs/lakebase-vs-sql-warehouse.md`.
+   `docs/entity-framework-analysis.md`. **Dapper** is the free ORM-like alternative —
+   WarehouseApi uses it in production style; LakebaseApi gets full EF Core because
+   Lakebase is plain Postgres (Npgsql provider).
+5. **Lakebase initially rejected** for the strict "no load into a transactional DB"
+   requirement (synced tables ARE a copy) — see `docs/lakebase-vs-sql-warehouse.md`.
+   LakebaseApi exists to *measure* that alternative anyway; the benchmark doc prices
+   the trade-off (~140 ms vs ~0.5 s medians with pooling).
 
 ## Hard-won platform gotchas (do not rediscover these)
 
@@ -99,18 +108,18 @@ Key wiring details:
   `https://databricks-bi-artifacts.s3.us-east-2.amazonaws.com/simbaspark-drivers/odbc/2.9.1/SimbaSparkODBC-2.9.1.1001-Debian-64bit.zip`
 - Installs to `/opt/simba/spark/lib/64/libsparkodbc_sb64.so`; its ini
   (`simba.sparkodbc.ini`) needs the same `ODBCInstLib` fix, pointing at
-  `/usr/lib/x86_64-linux-gnu/libodbcinst.so.2` (the Dockerfile does this).
-- The driver is **x86_64 only** → image pinned `--platform=linux/amd64` (emulated on
-  Apple Silicon). The root Dockerfile is untested end-to-end.
-- Docker Desktop IS now installed on the dev Mac (since 2026-07-10; start it with
+  `/usr/lib/x86_64-linux-gnu/libodbcinst.so.2` (the WarehouseApi Dockerfile does this
+  in the RUNTIME stage — the driver is a run-time native dependency).
+- The driver is **x86_64 only** → WarehouseApi image pinned `--platform=linux/amd64`
+  (emulated on Apple Silicon).
+- Docker Desktop IS installed on the dev Mac (since 2026-07-10; start it with
   `open -a Docker` if the daemon is down).
-- `customers-api-lakebase/Dockerfile` is separate on purpose: no native deps → no
-  platform pin, multi-arch, `aspnet:8.0` runtime image, build context is the subfolder
-  (the project links no outside files). **Tested end-to-end against live Lakebase**:
-  container listens on 8080 (aspnet default; launchSettings' 5210 only affects
-  `dotnet run`), first request ~3 s (pool warm-up), then ~140 ms.
+- LakebaseApi image is multi-arch on purpose: no native deps → no platform pin,
+  `aspnet:8.0` runtime. **Tested end-to-end against live Lakebase**: containers listen
+  on 8080 (aspnet default; launchSettings ports only affect `dotnet run`), first
+  request ~3 s (pool warm-up), then ~140 ms.
 
-### Lakebase (customers-api-lakebase)
+### Lakebase (LakebaseApi)
 - **The workspace PAT is NOT a valid Postgres password.** Lakebase requires an OAuth
   database credential (expires ~1 h, enforced at login only). The PAT is only valid to
   MINT that credential, and **Lakebase has two flavors with different credential APIs**:
@@ -149,59 +158,20 @@ Key wiring details:
   `LAKEBASE_ENDPOINT` or `LAKEBASE_INSTANCE`, `LAKEBASE_HOST`, `LAKEBASE_USER` (plain
   email, not URL-encoded), optional `LAKEBASE_DATABASE`
   (default `databricks_postgres`) and `LAKEBASE_TABLE` (default `public.sales_customers`).
-  Missing vars fail fast at startup (unlike customers-api, which 500s per request).
-- Fixed port 5210 via `Properties/launchSettings.json` so it can run alongside
-  customers-api. Timing headers: only `X-Query-Ms`/`X-Total-Ms` (Npgsql pools, so there
-  is no per-request handshake to report).
+  Missing vars fail fast at startup (unlike WarehouseApi, which 500s per request).
+- Timing headers: only `X-Query-Ms`/`X-Total-Ms` (Npgsql pools natively, so there is no
+  per-request handshake to report).
 - Smoke test without credentials: set all five vars to fake values (`*.invalid` hosts);
   `GET /customers` must return a 500 problem+json whose detail says
   `Could not reach the Lakebase Postgres host`, and `?limit=0` must return 400.
 
-### Dapper specifics
+### Dapper / ODBC specifics (WarehouseApi)
 - Databricks columns are snake_case; POCOs are PascalCase → must set
-  `DefaultTypeMap.MatchNamesWithUnderscores = true;` before querying.
+  `DefaultTypeMap.MatchNamesWithUnderscores = true;` before querying (done in Program.cs).
 - ODBC parameters are **positional `?`**, not named — write SQL accordingly
   (`WHERE country = ?`), Dapper binds the anonymous-object values in order.
-- Test table available in every workspace: `samples.bakehouse.sales_customers`
-  (`customerID bigint, first_name, last_name, email_address, phone_number, address,
-  city, state, country, continent, postal_zip_code bigint, gender`).
-
-## How to build / run / verify
-
-```bash
-export PATH="$HOME/.dotnet:$PATH"           # dotnet 8.0.422 in ~/.dotnet
-dotnet build                                 # root demo
-(cd dapper-demo && dotnet build)             # Dapper POC
-
-# Real run (needs credentials):
-export DATABRICKS_HOST="dbc-xxxx.cloud.databricks.com"   # scheme/slash tolerated
-export DATABRICKS_HTTP_PATH="/sql/1.0/warehouses/<id>"
-export DATABRICKS_TOKEN="dapi..."
-dotnet run                                   # or: cd dapper-demo && dotnet run
-# REST API: cd customers-api && dotnet run   # then GET /customers?gender=female, /customers/{id}, /swagger
-```
-
-**Smoke test without credentials** (validates the whole native stack): run with
-`DATABRICKS_HOST=nonexistent-host.invalid` and dummy path/token. Success looks like an
-ODBC error `[HY000] ... Could not resolve host` — meaning libodbc, the driver and the
-Thrift/HTTP layer all loaded and only DNS failed. Any dylib/so loading error means the
-platform gotchas above regressed.
-
-## Conventions
-
-- Everything user-facing (code comments, README, docs, commit messages) is **English**;
-  conversation with the repo owner is Spanish.
-- Docs style: TL;DR first, comparison table, recommendation, sources with links.
-  New analysis docs go in `docs/` and get linked from README.
-- Push over **SSH**
-
-### customers-api specifics
-- Query-param filtering is a **fixed whitelist** (param → column) in
-  `CustomersController`; user input only ever travels as positional `?` values.
-  `limit` is a range-checked int inlined into the SQL (parameterized LIMIT is
-  unreliable on the Simba/Spark driver).
-- Target table overridable via `CUSTOMERS_TABLE` (default
-  `samples.bakehouse.sales_customers`).
+- `limit` is a range-checked int inlined into the SQL: parameterized LIMIT is
+  unreliable on the Simba/Spark driver.
 - Connections come from `OdbcConnectionPool.cs` (singleton, in-process ConcurrentBag,
   max 8 idle): `System.Data.Odbc` has NO built-in ADO.NET pooling — that's a
   driver-manager feature configured per machine — so the app pools itself for
@@ -209,29 +179,54 @@ platform gotchas above regressed.
   `Execute` retries once on a fresh connection when `OdbcException` hits a reused one.
   Measured impact: ~1.7 s → ~0.5 s median e2e; reused sessions also cut query time
   ~35% (skip per-connection session setup) — see the benchmark doc follow-up.
-- Successful responses carry timing headers set in `Execute`: `X-Connection-Open-Ms`
-  (ODBC handshake, 0 on pool hit), `X-Connection-Reused`, `X-Query-Ms`
-  (query + materialization), `X-Total-Ms` (sum). Error responses have no timing headers.
-- Smoke test: run with the fake-host pattern below, then
-  `curl localhost:<port>/customers` must return HTTP 500 whose detail contains
-  `Could not resolve host` (proves controller → Dapper → driver wiring), and
-  `?limit=0` must return 400.
+- Timing headers set in `Execute`: `X-Connection-Open-Ms` (0 on pool hit),
+  `X-Connection-Reused`, `X-Query-Ms`, `X-Total-Ms`. Error responses carry none.
+- Test table available in every workspace: `samples.bakehouse.sales_customers`
+  (`customerID bigint, first_name, last_name, email_address, phone_number, address,
+  city, state, country, continent, postal_zip_code bigint, gender`; 300 rows).
+
+## How to build / run / verify
+
+```bash
+export PATH="$HOME/.dotnet:$PATH"           # dotnet 8.0.422 in ~/.dotnet
+dotnet build DatabricksServing.sln           # all three projects
+
+# WarehouseApi (needs DATABRICKS_HOST / DATABRICKS_HTTP_PATH / DATABRICKS_TOKEN):
+cd src/WarehouseApi && dotnet run            # http://localhost:5000
+# LakebaseApi (needs DATABRICKS_HOST/TOKEN + LAKEBASE_ENDPOINT|INSTANCE + LAKEBASE_HOST/USER):
+cd src/LakebaseApi && dotnet run             # http://localhost:5210
+```
+
+**Smoke test without credentials** (validates the whole native stack): run with
+`DATABRICKS_HOST=nonexistent-host.invalid` (and, for LakebaseApi, fake `LAKEBASE_*`
+values). WarehouseApi: `GET /customers` → 500 whose detail contains `[HY000] ...
+Could not resolve host` — meaning libodbc, the driver and the Thrift/HTTP layer all
+loaded and only DNS failed; any dylib/so loading error means the platform gotchas above
+regressed. LakebaseApi: 500 with `Could not reach the Lakebase Postgres host`. Both:
+`?limit=0` → 400.
+
+## Conventions
+
+- Everything user-facing (code comments, README, docs, commit messages) is **English**;
+  conversation with the repo owner is Spanish.
+- Docs style: TL;DR first, comparison table, recommendation, sources with links.
+  New analysis docs go in `docs/` and get linked from README.
+- Push over **SSH**.
+- The repo is **project-agnostic**: no client names or personal environment IDs in
+  committed files (generic examples only).
 
 ## Current status / possible next steps
 
-- Dapper POC: builds + smoke-tested; real-data mapping run pending on the owner
-  (positional-parameter binding is the one point to confirm).
-- customers-api: builds + smoke-tested without credentials (routing, validation and
-  native stack verified); real-data run against a live warehouse pending on the owner.
-- customers-api-lakebase: **verified end-to-end against a live Lakebase project (Free
-  Edition)** — PAT → credentials API → EF Core query returning real rows. Both APIs also
-  verified running simultaneously (5199/5210).
-- Benchmark run 2026-07-10 (see `docs/benchmark-sql-warehouse-vs-lakebase.md`): Lakebase
-  ~140 ms median vs warehouse ~1.7 s end-to-end. Free-tier sizes, 300-row table, warm,
-  sequential — floor measurement only.
-- ODBC pooling follow-up (same day, measured): warehouse median e2e ~1.7 s → ~0.5 s,
-  gap to Lakebase now ~3.5×. Also captured a real serverless cold start: 21.3 s e2e on
-  the first request after auto-suspend. Remaining follow-ups: `-pooler` Lakebase host,
-  concurrency, real-sized data under load.
-- Pending ideas discussed but not requested yet: one-page executive summary of the
-  EF/Lakebase/Dapper analyses; flow diagram; Makefile/scripts; testing the Docker build.
+- Both APIs **verified end-to-end against live services** (warehouse + Lakebase Free
+  Edition project), running simultaneously (5000/5210). Both images build from repo
+  root; LakebaseApi container tested e2e with real data; WarehouseApi container
+  smoke-tested (fake host → `Could not resolve host`, proving the whole native
+  ODBC stack loads inside the emulated image) — real-credential container run pending.
+- Benchmark 2026-07-10 (`docs/benchmark-sql-warehouse-vs-lakebase.md`): Lakebase
+  ~140 ms median vs warehouse ~1.7 s e2e; with the ODBC pool (same day) warehouse drops
+  to ~0.5 s (gap ~3.5×). Real serverless cold start captured: 21.3 s. Free-tier sizes,
+  300-row table, warm, sequential — floor measurement only.
+- 2026-07-10 restructure: dapper-demo and the root console demo removed; sln + src/
+  layout with Shared classlib; both Dockerfiles build from repo root.
+- Remaining follow-ups: `-pooler` Lakebase host, concurrency, real-sized data under
+  load; one-page executive summary; Makefile/scripts.

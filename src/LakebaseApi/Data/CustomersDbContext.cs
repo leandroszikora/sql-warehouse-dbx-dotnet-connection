@@ -1,7 +1,7 @@
-using DatabricksCustomersLakebaseApi.Models;
+using DatabricksServing.Shared.Models;
 using Microsoft.EntityFrameworkCore;
 
-namespace DatabricksCustomersLakebaseApi.Data;
+namespace DatabricksServing.LakebaseApi.Data;
 
 /// <summary>
 /// Read-only EF Core context over the Lakebase synced table. The table is created and

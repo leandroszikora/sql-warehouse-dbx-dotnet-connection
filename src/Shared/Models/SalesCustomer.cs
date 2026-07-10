@@ -1,9 +1,11 @@
-namespace DatabricksCustomersLakebaseApi.Models;
+namespace DatabricksServing.Shared.Models;
 
 /// <summary>
-/// Entity mapped to the Lakebase synced table of samples.bakehouse.sales_customers.
-/// Column names are mapped explicitly in <c>CustomersDbContext</c> because the synced
-/// table keeps the original snake_case (and one camelCase: customerID) column names.
+/// POCO for the sales_customers table, shared by both backends.
+/// The source columns keep their original names (snake_case, plus the camelCase
+/// customerID); each backend maps them its own way — Dapper via
+/// DefaultTypeMap.MatchNamesWithUnderscores, EF Core via HasColumnName in the
+/// DbContext fluent mapping.
 /// </summary>
 public sealed class SalesCustomer
 {

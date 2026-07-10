@@ -5,7 +5,7 @@ Measured comparison of the two REST API demos in this repo serving the same data
 
 ## TL;DR
 
-| | SQL Warehouse (`customers-api`) | Lakebase (`customers-api-lakebase`) |
+| | SQL Warehouse (`src/WarehouseApi`) | Lakebase (`src/LakebaseApi`) |
 | --- | --- | --- |
 | Median end-to-end latency (per-request connection) | **~1.7–1.8 s** | **~140 ms** (≈12× faster) |
 | Median end-to-end latency (**with connection pooling**, measured follow-up below) | **~460–600 ms** | ~140 ms (≈3.5× faster) |
@@ -168,7 +168,7 @@ on the EF Core path.
 ## Follow-up: ODBC connection pooling, measured
 
 Conclusion #2 predicted that pooling the ODBC connection was the cheapest improvement.
-It was implemented (`customers-api/OdbcConnectionPool.cs` — an in-process pool, since
+It was implemented (`src/WarehouseApi/OdbcConnectionPool.cs` — an in-process pool, since
 `System.Data.Odbc` has no built-in ADO.NET pooling) and the warehouse benchmark rerun
 same-day, same conditions, 50 requests, 100% pool hits, zero errors:
 

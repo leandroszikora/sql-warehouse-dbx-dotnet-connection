@@ -1,12 +1,13 @@
 using System.Diagnostics;
 using System.Net.Sockets;
-using DatabricksCustomersLakebaseApi.Data;
-using DatabricksCustomersLakebaseApi.Models;
+using DatabricksServing.LakebaseApi.Data;
+using DatabricksServing.Shared;
+using DatabricksServing.Shared.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 
-namespace DatabricksCustomersLakebaseApi.Controllers;
+namespace DatabricksServing.LakebaseApi.Controllers;
 
 [ApiController]
 [Route("customers")]
@@ -57,8 +58,8 @@ public sealed class CustomersController(CustomersDbContext db) : ControllerBase
     }
 
     // Runs the query, translates the known failure modes into HTTP 500s, and reports
-    // timing via response headers (mirrors customers-api so both backends are directly
-    // comparable). Npgsql pools connections, so unlike the ODBC demo there is no
+    // timing via response headers (mirrors WarehouseApi so both backends are directly
+    // comparable). Npgsql pools connections, so unlike the ODBC path there is no
     // per-request handshake to measure separately:
     //   X-Query-Ms  query execution + result materialization
     //   X-Total-Ms  whole round trip incl. credential/connection acquisition if any
@@ -91,17 +92,4 @@ public sealed class CustomersController(CustomersDbContext db) : ControllerBase
             return Problem($"Could not reach the Lakebase Postgres host:\n{ex.Message}");
         }
     }
-}
-
-/// <summary>Optional equality filters for GET /customers, bound from the query string.</summary>
-public sealed class CustomerFilters
-{
-    public string? Gender { get; init; }
-    public string? Country { get; init; }
-    public string? City { get; init; }
-    public string? State { get; init; }
-    public string? Continent { get; init; }
-    public string? FirstName { get; init; }
-    public string? LastName { get; init; }
-    public int Limit { get; init; } = 100;
 }

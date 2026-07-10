@@ -1,5 +1,5 @@
-using DatabricksCustomersLakebaseApi;
-using DatabricksCustomersLakebaseApi.Data;
+using DatabricksServing.LakebaseApi;
+using DatabricksServing.LakebaseApi.Data;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 

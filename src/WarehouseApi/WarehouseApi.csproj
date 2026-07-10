@@ -4,7 +4,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
-    <RootNamespace>DatabricksCustomersApi</RootNamespace>
+    <RootNamespace>DatabricksServing.WarehouseApi</RootNamespace>
+    <AssemblyName>DatabricksServing.WarehouseApi</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,9 +14,8 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
   </ItemGroup>
 
-  <!-- Reuse the connection helper from the root project without duplicating it. -->
   <ItemGroup>
-    <Compile Include="..\DatabricksConnection.cs" Link="DatabricksConnection.cs" />
+    <ProjectReference Include="..\Shared\Shared.csproj" />
   </ItemGroup>
 
 </Project>

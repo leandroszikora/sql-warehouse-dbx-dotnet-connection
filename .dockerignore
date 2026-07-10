@@ -1,7 +1,6 @@
-bin/
-obj/
+**/bin/
+**/obj/
 .git/
 .gitignore
-*.md
-dapper-demo/
 docs/
+*.md

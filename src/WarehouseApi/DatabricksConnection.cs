@@ -1,11 +1,11 @@
 using System.Data.Odbc;
 using System.Runtime.InteropServices;
 
-namespace DatabricksSqlDemo;
+namespace DatabricksServing.WarehouseApi;
 
 /// <summary>
 /// Builds and opens an ODBC connection to a Databricks SQL Warehouse using a personal
-/// access token. Shared by the raw-ODBC demo and the Dapper demo.
+/// access token.
 /// </summary>
 public static class DatabricksConnection
 {
