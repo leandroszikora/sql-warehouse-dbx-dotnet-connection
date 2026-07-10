@@ -27,6 +27,7 @@ customers-api/                # ASP.NET Core MVC Web API (classic controllers) o
   Program.cs                  # AddControllers + Swagger; sets MatchNamesWithUnderscores
   Models/SalesCustomer.cs     # POCO (duplicated from dapper-demo on purpose — demos are standalone)
   Controllers/CustomersController.cs  # GET /customers (whitelisted query-param filters), GET /customers/{id}
+  OdbcConnectionPool.cs       # in-process pool of open ODBC connections (no DM pooling in .NET)
 customers-api-lakebase/       # same API over Lakebase Postgres via EF Core + Npgsql (port 5210)
   DatabricksCustomersLakebaseApi.csproj  # Npgsql.EntityFrameworkCore.PostgreSQL 8.x; standalone (no linked files)
   Program.cs                  # NpgsqlDataSource + UsePasswordProvider + AddDbContext; fails fast on missing env vars
@@ -201,10 +202,16 @@ platform gotchas above regressed.
   unreliable on the Simba/Spark driver).
 - Target table overridable via `CUSTOMERS_TABLE` (default
   `samples.bakehouse.sales_customers`).
-- One ODBC connection per request, on purpose (POC simplicity); documented in README.
+- Connections come from `OdbcConnectionPool.cs` (singleton, in-process ConcurrentBag,
+  max 8 idle): `System.Data.Odbc` has NO built-in ADO.NET pooling — that's a
+  driver-manager feature configured per machine — so the app pools itself for
+  portability. A reused connection can be dead server-side (warehouse idle timeout):
+  `Execute` retries once on a fresh connection when `OdbcException` hits a reused one.
+  Measured impact: ~1.7 s → ~0.5 s median e2e; reused sessions also cut query time
+  ~35% (skip per-connection session setup) — see the benchmark doc follow-up.
 - Successful responses carry timing headers set in `Execute`: `X-Connection-Open-Ms`
-  (ODBC handshake), `X-Query-Ms` (query + materialization), `X-Total-Ms` (sum).
-  Error responses have no timing headers.
+  (ODBC handshake, 0 on pool hit), `X-Connection-Reused`, `X-Query-Ms`
+  (query + materialization), `X-Total-Ms` (sum). Error responses have no timing headers.
 - Smoke test: run with the fake-host pattern below, then
   `curl localhost:<port>/customers` must return HTTP 500 whose detail contains
   `Could not resolve host` (proves controller → Dapper → driver wiring), and
@@ -220,9 +227,11 @@ platform gotchas above regressed.
   Edition)** — PAT → credentials API → EF Core query returning real rows. Both APIs also
   verified running simultaneously (5199/5210).
 - Benchmark run 2026-07-10 (see `docs/benchmark-sql-warehouse-vs-lakebase.md`): Lakebase
-  ~140 ms median vs warehouse ~1.7 s end-to-end (~750 ms engine-only once the ODBC
-  handshake is excluded). Free-tier sizes, 300-row table, warm, sequential — floor
-  measurement only. Obvious follow-ups: ODBC connection pooling, `-pooler` Lakebase
-  host, cold-start measurement, real-sized data under load.
+  ~140 ms median vs warehouse ~1.7 s end-to-end. Free-tier sizes, 300-row table, warm,
+  sequential — floor measurement only.
+- ODBC pooling follow-up (same day, measured): warehouse median e2e ~1.7 s → ~0.5 s,
+  gap to Lakebase now ~3.5×. Also captured a real serverless cold start: 21.3 s e2e on
+  the first request after auto-suspend. Remaining follow-ups: `-pooler` Lakebase host,
+  concurrency, real-sized data under load.
 - Pending ideas discussed but not requested yet: one-page executive summary of the
   EF/Lakebase/Dapper analyses; flow diagram; Makefile/scripts; testing the Docker build.

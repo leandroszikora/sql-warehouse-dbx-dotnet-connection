@@ -6,6 +6,8 @@ DefaultTypeMap.MatchNamesWithUnderscores = true;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// One process-wide pool of open ODBC connections (see OdbcConnectionPool).
+builder.Services.AddSingleton<DatabricksCustomersApi.OdbcConnectionPool>();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();

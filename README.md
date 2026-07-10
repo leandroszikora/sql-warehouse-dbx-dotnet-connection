@@ -277,13 +277,17 @@ so you can measure how long the SQL Warehouse takes to answer:
 
 | Header | Meaning |
 |---|---|
-| `X-Connection-Open-Ms` | ODBC handshake against the warehouse (paid on every request in this POC) |
+| `X-Connection-Open-Ms` | ODBC handshake against the warehouse (0 on a pool hit) |
+| `X-Connection-Reused` | Whether the connection came from the in-process pool |
 | `X-Query-Ms` | Query execution + result materialization |
-| `X-Total-Ms` | Sum of both — the whole warehouse round trip |
+| `X-Total-Ms` | Sum — the whole warehouse round trip |
 
-> Note: the API opens one ODBC connection per request — fine for a POC, but each
-> request pays the connection handshake (a few seconds if the warehouse is cold).
-> A production version would keep/pool connections.
+> Note: the API keeps an in-process pool of open ODBC connections
+> (`OdbcConnectionPool.cs`) — `System.Data.Odbc` has no built-in ADO.NET pooling, so
+> the app pools itself. Only the first use of each pooled connection pays the ODBC
+> handshake; a dead pooled connection (warehouse idle timeout) is retried once on a
+> fresh one. Measured impact: median end-to-end dropped from ~1.7 s to ~0.5 s (see
+> [docs/benchmark-sql-warehouse-vs-lakebase.md](docs/benchmark-sql-warehouse-vs-lakebase.md)).
 
 ---
 

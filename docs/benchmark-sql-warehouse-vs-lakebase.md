@@ -7,19 +7,19 @@ Measured comparison of the two REST API demos in this repo serving the same data
 
 | | SQL Warehouse (`customers-api`) | Lakebase (`customers-api-lakebase`) |
 | --- | --- | --- |
-| Median end-to-end latency | **~1.7–1.8 s** | **~140 ms** (≈12× faster) |
-| …of which is a POC artifact | ~640 ms ODBC handshake per request (poolable) | — (Npgsql pools by default) |
-| Engine-only median (query + fetch) | ~750 ms | ~140 ms (≈5× faster) |
+| Median end-to-end latency (per-request connection) | **~1.7–1.8 s** | **~140 ms** (≈12× faster) |
+| Median end-to-end latency (**with connection pooling**, measured follow-up below) | **~460–600 ms** | ~140 ms (≈3.5× faster) |
+| Engine-only median (query + fetch) | ~750 ms (→ ~500 ms on a reused session) | ~140 ms |
 | Latency consistency (p95/median) | ~1.3× | ~1.2–2.1× |
 | Data freshness | Live Delta, no copy | Synced-table **copy** (sync lag applies) |
 | ORM story | Dapper (no free EF provider) | Full EF Core (Npgsql, free/official) |
 | Native dependencies | ODBC driver + unixODBC (per-machine config) | None (pure NuGet) |
 
-**Bottom line:** for an interactive API, Lakebase-style Postgres serving is an order of
-magnitude faster and materially simpler to develop against — *if* a synced-table copy
-and its sync lag are acceptable. Direct SQL Warehouse access keeps the "no data copy"
-guarantee at a ~1–2 s interactive floor on this (smallest, unoptimized) setup, and
-roughly 40% of that floor is a fixable POC artifact (per-request ODBC handshake).
+**Bottom line:** for an interactive API, Lakebase-style Postgres serving is materially
+faster and simpler to develop against — *if* a synced-table copy and its sync lag are
+acceptable. Direct SQL Warehouse access keeps the "no data copy" guarantee at a floor
+that pooling brings down to **~0.5 s** on this (smallest, unoptimized) setup — see the
+measured pooling follow-up at the end of this document.
 
 ## Test environment (read before quoting numbers)
 
@@ -152,7 +152,8 @@ on the EF Core path.
 2. **The warehouse is not disqualified:** ~1–2 s responses on the smallest serverless
    size, unoptimized tables, and a handshake-per-request POC is a workable floor for
    internal tools, and it is the only option that preserves "no data copy". Pooling the
-   ODBC connection is the first, cheapest improvement.
+   ODBC connection is the first, cheapest improvement — since measured (see follow-up
+   below): it cuts the median to ~0.5 s.
 3. **The trade is latency vs copy:** choosing Lakebase means accepting a synced copy,
    its sync lag, and a second governance surface — the exact concern raised in
    [lakebase-vs-sql-warehouse.md](lakebase-vs-sql-warehouse.md). This benchmark prices
@@ -163,6 +164,43 @@ on the EF Core path.
 5. **Before a production decision**, rerun with: production-sized data, indexes on the
    Postgres side / OPTIMIZE + clustering on Delta, concurrent load, measured cold
    starts, and the pooled variants (ODBC connection reuse; the `-pooler` Lakebase host).
+
+## Follow-up: ODBC connection pooling, measured
+
+Conclusion #2 predicted that pooling the ODBC connection was the cheapest improvement.
+It was implemented (`customers-api/OdbcConnectionPool.cs` — an in-process pool, since
+`System.Data.Odbc` has no built-in ADO.NET pooling) and the warehouse benchmark rerun
+same-day, same conditions, 50 requests, 100% pool hits, zero errors:
+
+| Scenario | Query med (was) | End-to-end med (was) | End-to-end p95 (was) |
+| --- | ---: | ---: | ---: |
+| `?limit=10` | 498 (685) | 501 (1 674) | 1 291 (2 227) |
+| `?limit=100` | 486 (772) | 489 (1 769) | 544 (2 307) |
+| `?limit=1000` (300 rows) | 561 (734) | 564 (1 700) | 1 138 (2 255) |
+| `?country=USA&limit=100` | 603 (795) | 606 (1 759) | 842 (2 355) |
+| `/customers/{id}` | 460 (737) | 463 (1 774) | 586 (1 929) |
+
+Raw data: [benchmark-data/results-pooled.csv](benchmark-data/results-pooled.csv).
+
+Three effects, only the first of which was predicted:
+
+1. **The ~640 ms handshake disappears** from every warm request (`X-Connection-Open-Ms: 0`).
+2. **The query itself got ~35% faster** (~750 → ~500 ms median): a reused session skips
+   per-connection session setup on the warehouse side too.
+3. **The ~350 ms post-response overhead vanished** — it was ODBC connection teardown,
+   now deferred until the pool discards a connection.
+
+Net: pooling cut the warehouse median end-to-end from ~1.7 s to ~460–600 ms — a 3×
+improvement for ~60 lines of code. The gap to Lakebase narrows from ~12× to **~3.5×**.
+
+Also captured incidentally: a real **serverless cold start**. The first request after
+the warehouse auto-suspended took **21.3 s end-to-end** (~1 s handshake + ~20 s query
+while the warehouse resumed). Any latency SLO on serverless compute must either keep it
+warm or absorb that first hit.
+
+Caveats: the pool is per-process, retries once on dead pooled connections (warehouse
+idle timeouts), and was measured sequentially — under concurrency each parallel request
+still needs its own pooled connection (first use pays the handshake once).
 
 ## Reproducing
 

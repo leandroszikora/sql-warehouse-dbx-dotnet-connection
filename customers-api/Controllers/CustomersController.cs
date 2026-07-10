@@ -9,7 +9,7 @@ namespace DatabricksCustomersApi.Controllers;
 
 [ApiController]
 [Route("customers")]
-public sealed class CustomersController : ControllerBase
+public sealed class CustomersController(OdbcConnectionPool pool) : ControllerBase
 {
     private const int MaxLimit = 1000;
 
@@ -83,23 +83,45 @@ public sealed class CustomersController : ControllerBase
         });
     }
 
-    // Opens a connection per request (fine for a POC; each request pays the ODBC
-    // handshake) and translates the demo's known failure modes into HTTP 500s.
+    // Rents a pooled connection (the ODBC handshake is only paid when the pool is
+    // empty) and translates the demo's known failure modes into HTTP 500s.
     // Timing is reported via response headers so the JSON body stays untouched:
-    //   X-Connection-Open-Ms  ODBC handshake against the warehouse
+    //   X-Connection-Open-Ms  ODBC handshake (≈0 on a pool hit)
+    //   X-Connection-Reused   whether the connection came from the pool
     //   X-Query-Ms            query execution + result materialization
     //   X-Total-Ms            sum of both (whole warehouse round trip)
     private IActionResult Execute(Func<OdbcConnection, IActionResult> action)
     {
         var stopwatch = Stopwatch.StartNew();
+        OdbcConnection? connection = null;
         try
         {
-            using OdbcConnection connection = DatabricksConnection.OpenConnection();
+            connection = pool.Rent(out bool reused);
             long connectionOpenMs = stopwatch.ElapsedMilliseconds;
-            IActionResult result = action(connection);
+
+            IActionResult result;
+            try
+            {
+                result = action(connection);
+            }
+            catch (OdbcException) when (reused)
+            {
+                // A pooled connection can be dead server-side (warehouse idle timeout
+                // or restart). Pay the handshake once and retry on a fresh one.
+                connection.Dispose();
+                connection = null;
+                connection = DatabricksConnection.OpenConnection();
+                reused = false;
+                connectionOpenMs = stopwatch.ElapsedMilliseconds;
+                result = action(connection);
+            }
             stopwatch.Stop();
 
+            pool.Return(connection);
+            connection = null;
+
             Response.Headers["X-Connection-Open-Ms"] = connectionOpenMs.ToString();
+            Response.Headers["X-Connection-Reused"] = reused ? "true" : "false";
             Response.Headers["X-Query-Ms"] = (stopwatch.ElapsedMilliseconds - connectionOpenMs).ToString();
             Response.Headers["X-Total-Ms"] = stopwatch.ElapsedMilliseconds.ToString();
             return result;
@@ -113,6 +135,10 @@ public sealed class CustomersController : ControllerBase
             string details = string.Join("\n",
                 ex.Errors.Cast<OdbcError>().Select(e => $"[{e.SQLState}] {e.Message}"));
             return Problem($"ODBC error while querying Databricks:\n{details}");
+        }
+        finally
+        {
+            connection?.Dispose(); // only non-null when an exception skipped Return
         }
     }
 }
