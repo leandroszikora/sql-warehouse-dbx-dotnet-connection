@@ -132,6 +132,32 @@ docker run --rm --platform linux/amd64 \
   databricks-sql-demo
 ```
 
+### Lakebase API container
+
+The Lakebase demo has its own
+[customers-api-lakebase/Dockerfile](customers-api-lakebase/Dockerfile). No native
+dependencies (Npgsql is pure managed code), so it is **multi-arch** — builds and runs
+natively on Apple Silicon, no `--platform` pin, and uses the slim `aspnet` runtime
+image. Verified end-to-end against a live Lakebase project.
+
+```bash
+cd customers-api-lakebase
+docker build -t customers-api-lakebase .
+docker run --rm -p 5210:8080 \
+  -e DATABRICKS_HOST="adb-xxxx.azuredatabricks.net" \
+  -e DATABRICKS_TOKEN="dapiXXXXXXXX" \
+  -e LAKEBASE_ENDPOINT="projects/my-project/branches/production/endpoints/primary" \
+  -e LAKEBASE_HOST="ep-xxxx.database.us-east-2.cloud.databricks.com" \
+  -e LAKEBASE_USER="you@example.com" \
+  customers-api-lakebase
+# then: curl -si "http://localhost:5210/customers?limit=5"
+```
+
+Inside the container the app listens on the aspnet image default (`8080`);
+`launchSettings.json` (port 5210) only applies to `dotnet run`, so map any host port
+you like. The first request pays a few seconds of pool warm-up (TLS + credential
+minting); subsequent requests match the non-containerized latency.
+
 ---
 
 ## Expected output

@@ -34,6 +34,7 @@ customers-api-lakebase/       # same API over Lakebase Postgres via EF Core + Np
   Data/CustomersDbContext.cs  # fluent mapping to the synced table (schema.table from LAKEBASE_TABLE)
   Models/SalesCustomer.cs     # POCO duplicated on purpose — demos are standalone
   Controllers/CustomersController.cs  # same endpoints/filters, LINQ instead of SQL
+  Dockerfile                  # multi-arch (no native deps), aspnet runtime, port 8080
 docs/
   entity-framework-analysis.md    # why EF Core can't run free on Databricks
   lakebase-vs-sql-warehouse.md    # 3 options to consume Delta from .NET
@@ -99,8 +100,14 @@ Key wiring details:
   (`simba.sparkodbc.ini`) needs the same `ODBCInstLib` fix, pointing at
   `/usr/lib/x86_64-linux-gnu/libodbcinst.so.2` (the Dockerfile does this).
 - The driver is **x86_64 only** → image pinned `--platform=linux/amd64` (emulated on
-  Apple Silicon). Docker is NOT installed on the dev Mac; the Dockerfile is untested
-  end-to-end.
+  Apple Silicon). The root Dockerfile is untested end-to-end.
+- Docker Desktop IS now installed on the dev Mac (since 2026-07-10; start it with
+  `open -a Docker` if the daemon is down).
+- `customers-api-lakebase/Dockerfile` is separate on purpose: no native deps → no
+  platform pin, multi-arch, `aspnet:8.0` runtime image, build context is the subfolder
+  (the project links no outside files). **Tested end-to-end against live Lakebase**:
+  container listens on 8080 (aspnet default; launchSettings' 5210 only affects
+  `dotnet run`), first request ~3 s (pool warm-up), then ~140 ms.
 
 ### Lakebase (customers-api-lakebase)
 - **The workspace PAT is NOT a valid Postgres password.** Lakebase requires an OAuth
